@@ -1,0 +1,317 @@
+package parser
+
+
+object CommandParser {
+
+    case class Command(action: String, obj: String, item: String, error: String)
+    case class GameObj(desc: String, kind: String)
+
+    val grammar = List(
+        "look",
+        "inventory",
+        "go {direction}",
+        "climb {object}",
+        "take {object}",
+        "drop {object}",
+        "open {object}",
+        "close {object}",
+        "lock {object}",
+        "unlock {object}",
+        "eat {object}",
+        "examine {object}",
+        "search {object}",
+        "sit on {object}",
+        "lie on {object}",
+        "put {item} in {container}",
+        "put {item} on {supporter}",
+        "wear {clothing}",
+        "remove {clothing}",
+        "turn on {object}",
+        "turn off {object}",
+        "tie {item} to {object}",
+        "talk to {person}")
+
+    val world = List(
+        GameObj("small green frog", "item"),
+        GameObj("small tree frog", "item"),
+        GameObj("large wooden box", "container"),
+        GameObj("flimsy cardboard box", "container"),
+        GameObj("solid wooden table", "supporter"),
+        GameObj("comfy chair", "object"),
+        GameObj("soccer ball", "item"),
+        GameObj("beach ball", "item"),
+        GameObj("north", "direction"),
+        GameObj("south", "direction"),
+        GameObj("east", "direction"),
+        GameObj("west", "direction"),
+        GameObj("very old man", "person"),
+        GameObj("very young woman", "person"))
+    
+    // ==========================================================
+    // helper functions
+    // ==========================================================
+      
+    // turn a string of words separated by spaces into a list of those words
+    def getWordList(words: String): List[String] = words.split(" ").toList
+    
+    // ==========================================================
+    // functions on world
+    // ==========================================================
+    
+    /** // Note: All lists of string that are returned from the following methods should be
+    // distinct (no duplicates) and they should be in sorted order.
+    
+    // returns a list of all the adjectives (all but last words in desc) in world
+    // example: cardboard, flimsy, very [ but not 'box' ]
+    */    
+    def getAdjectives(): List[String] = world.map(g => (getWordList(g.desc)).reverse.tail).flatten.distinct.sorted
+    
+    /** // returns a list of nouns (last words in desc) from world
+    // example: box, frog, man
+    */    
+    def getNouns(): List[String] = world.map(g => (getWordList(g.desc)).reverse.head).distinct.sorted
+    
+    /** // returns a list of game-object kinds from world
+    // example: direction, item, object
+    */    
+    def getGameObjectKinds(): List[String] = world.map(g => (g.kind)).distinct.sorted
+    
+    /** // returns a list of game-objects associated with a particular noun
+    // example: getGameObjects("frog") => 
+    //   List(GameObj("small green frog", "item"),GameObj("small tree frog", "item"))
+    */
+    def getGameObjects(noun: String) = (world.filter(p => ((getWordList(p.desc)).reverse.head) == noun)).distinct 
+
+    // ==========================================================
+    // functions on grammar
+    // ==========================================================
+
+    /** // returns a list of all verbs (first words) in grammar
+    // example: look, examine, put
+    */    
+    def getVerbs(): List[String] = grammar.map(g => (getWordList(g).head)).distinct.sorted
+    
+    /** // returns a list of all prepositions in grammar
+    // prepositions are words in grammar strings that are not verbs and not
+    // in curly braces
+    // example: in, on, to
+    */    
+    def getPrepositions(): List[String] = (grammar.map(g => (getWordList(g).tail)).flatten).filter(p => !p.startsWith("{")).distinct
+    
+    /** // returns a list of all actions from grammar
+    // actions are formed by combining the verb with its preposition (if any) with
+    // an underscore between them
+    // example: look, examine, put_in
+    */    
+    def getActions(): List[String] = (grammar.map(g => ((getWordList(g).head) + (action(getWordList(g).tail.filter { p => !p.startsWith("{") }))))).distinct.sorted 
+    def action(xs :List[String]): String = xs match {
+      case Nil => ""
+      case y :: ys => "_" + y
+    }
+    
+    /** // returns a list of game-object kinds from grammar
+    // in grammar, all the words in curly braces
+    // example: direction, item, object
+    */    
+    def getGrammarObjectKinds(): List[String] = (grammar.map(g => (getWordList(g).tail.filter { p => p.startsWith("{") })).flatten)
+    .map(x => x.replaceAll ("[{}]", "")).distinct.sorted
+    
+    /** // returns a list of errors built from the grammar
+    // grammar errors are constructed from the action + non + kind, where the kind is
+    // a word inside curly braces (other than "object") in the action
+    // example: go_non_direction, put_in_non_item
+    // note: we assume that everything (even directions) are objects, so we do not
+    // include object
+    */    
+    def getGrammarErrors(): List[String] = ge(grammar).distinct.sorted
+    def ge(xs: List[String]):List[String] = xs match {
+      case Nil => Nil
+      case y :: ys => (for(p <- (getWordList(y).tail.filter { q => q.startsWith("{") && !q.contains("object") })) 
+        yield ((getWordList(y).head) + (action(getWordList(y).tail.filter { r => !r.startsWith("{") })) + "_non_" + p.replaceAll ("[{}]", ""))) ::: ge(ys) 
+    }
+    
+    
+    /** // given a verb, returns a list of all grammar strings associated with it
+    // example: put => List(put {item} in {object}, put {item} on {object})
+    */    
+    def getGrammarStrings(verb: String): List[String] = (grammar.filter { x => getWordList(x).head == verb }).distinct
+    
+    // ==========================================================
+    // getVocab function
+    // ==========================================================
+    
+    /** // returns a list of all known words (from grammar and world)
+    // note: does not include words in curly braces: {object} {direction} etc.
+    */
+    def getVocab(): List[String] = (getAdjectives() ::: getNouns()  ::: getVerbs() ::: getPrepositions()).distinct.sorted 
+    
+    // ==========================================================
+    // getCommand function
+    // ==========================================================
+    
+    
+    /** // return true if the pattern contains a preposition
+    */
+    def hasPrep(pattern: List[String]): Boolean = pattern match {
+      case Nil => false
+      case y :: ys => if (getPrepositions().contains(y)) true else hasPrep(ys)
+    }
+    
+    /** // return true if the word list matches the specified game object
+    // for a string of words to match a game object, all the words in the string
+    // must be words contained in the description of the game object
+    // Ex: wordsMatchGameObj("tree tree", GameObj("small tree frog", "item") ==> true
+    // Ex: wordsMatchGameObj("small ball", GameObj("beach ball", "item") ==> false
+    */
+    def wordsMatchGameObj(words: String, gameObj: GameObj): Boolean = getWordList(words) match {     
+      case Nil | "" :: Nil => if (gameObj.desc.isEmpty()){ true} else false
+      case x :: Nil => if (gameObj.desc.contains(x)){ true} else false 
+      case y :: ys => if (gameObj.desc.contains(y)){ wordsMatchGameObj(ys.mkString(""), gameObj)} else false 
+      
+    }
+    
+    /** // return true if the words match the specified pattern
+    // for a command string to match a pattern, the verb and prepositions
+    // must match exactly and there must be one or more words for each bracket-word
+    // Ex: wordsMatchPattern({"put in box", "put {item} in {container}") ==> false
+    // Ex: wordsMatchPattern("put tree tree in cardboard small",
+    // "put {item} in {container}") ==> true
+    */
+    def wordsMatchPattern(cmdWords: String, pattern: String): Boolean = wordsMatchPatternL(getWordList(cmdWords), getWordList(pattern))
+      
+    def wordsMatchPatternL(cmdWords: List[String], pattern: List[String]): Boolean = cmdWords match {     
+      case Nil | "" :: Nil => if (pattern == Nil){ true} else false
+      case x :: Nil => if (pattern.head.contains("{") && pattern.tail == Nil){ true} else if (cmdWords == pattern) true else false 
+      case y :: ys => if (pattern.head.contains("{") && pattern.tail == Nil) true else if (pattern == Nil) false
+        else if (pattern.head.contains("{") && ys.head != pattern.tail.head) { wordsMatchPatternL(ys, pattern) }      
+        else if (pattern.head.contains("{") && ys.head == pattern.tail.head) { wordsMatchPatternL(ys.tail, pattern.tail.tail)} 
+        else if (y == pattern.head) { wordsMatchPatternL(ys, pattern.tail)  }
+        else false
+     }
+    
+    /** // Note: For all errors, the action, obj, and item fields are ignored
+    // Note: All game objects (including directions) match {object}
+    // Note: When matching a game object, the words should have the form
+    //       "adj adj ... adj noun"
+    //       Not all adjectives need to be use and adjective can be in any order.
+    //       Example: "table", "wooden table" and "wooden solid table" all match
+    //       GameObj("solid wooden table", "supporter")
+    
+    // If a word is neither in the grammar nor the world, the error should be
+    // unknown_word_[word] where [word] is the unknown word.
+    // example: getCommand("take yellow ball") => Command(,,,unknown_word_yellow)
+    
+    // If the verb is not a valid verb, the error should be
+    // unknown_verb_[word] where [word] is the unknown verb.
+    // example: getCommand("frog very small") => Command(,,,unknown_verb_frog)
+    
+    // If the verb is valid but the expression does not match a pattern associated
+    // with the verb, the error should be unknown_pattern_[verb] where [verb]
+    // is the matching verb
+    // example: getCommand("put small tree frog") => Command(,,,unknown_pattern_put)
+    
+    // If a pattern is matched but the word that should be a noun is not, the error
+    // should be unknown_noun_[word] where [word] is the unknown noun.
+    // example: getCommand("put small tree in box") => Command(,,,unknown_noun_tree)
+    
+    // If a pattern is matched but the noun words do not match a game object,
+    // the error should be unknown_game_object_[words] where [words] are all
+    // the words that were expected to be the game object.
+    // example: getCommand("put small tree frog on flimsy wooden ball") =>
+    //   Command(,,,unknow_game_object_flimsy_wooden_ball)
+    
+    // If the words for an object can match more than one object, the error should be
+    // ambiguous_object_[words] where words are the object words
+    // example: getCommand("take small frog") => Command(,,,ambiguous_object_small_frog)
+    
+    // If a pattern is matched, but the kind of object is not correct for the pattern,
+    // the error should be [action]_non_[kind]_[words]
+    // example: getCommand("put wooden table in cardboard box") =>
+    //   Command(,,,put_in_non_item_wooden_table)
+    
+    // given a string of words, returns the corresponding command
+    */
+    def getCommand(text: String): Command = getWordList(text) match {
+      case Nil | ("" :: Nil) => new Command("","","","empty_command")
+      case y :: ys => var a= checkWords(y::ys); 
+                      if (a._1) {
+                        if(getVerbs().contains(y)){
+                          var c = checkPattern(y::ys, y);
+                          if(c._1) {
+                            var desc = formatPattern(text,c._3,y)
+                            if (desc != null) {
+                            var d =checkNoun(desc.split(",").toList,getNouns());
+                             if(d._1) {
+                               var list = (getWordList(c._3).filter { p => p.startsWith("{") }).map(x => x.replaceAll ("[{}]", ""))
+                               var e = checkObj(desc.split(",").toList);
+                               if(e._1) {
+                                 var action = (getWordList(c._3).filter { p => !p.startsWith("{") }).mkString("_");
+                                 var f = checkNounObj(list,desc.split(",").toList,action,""); 
+                                  if(f._1){
+                                    if (f._3.length == 0)
+                                    new Command(action,"","","")
+                                    else if (f._3.length == 1)
+                                    new Command(action,f._3(0),"","")
+                                    else 
+                                     new Command(action,f._3(0),f._3(1),"")
+                                  } else f._2
+                               } else e._2
+                             } else d._2
+                            } else new Command(y,"","","")
+                           } else c._2
+                        } else new Command("","","","unknown_verb_"+y.split(" ").toList.mkString("_"))
+                      } else a._2
+    }
+    def checkWords(x:List[String]):(Boolean,Command) = x match {
+      case Nil => (true, null)
+      case y :: ys => if (getVocab().contains(y)) checkWords(ys) else (false, new Command("","","","unknown_word_"+y.split(" ").toList.mkString("_")))
+    }
+    def checkPattern(x:List[String],verb: String):(Boolean,Command,String) = if (checkPatternL(x,getGrammarStrings(verb))._1) 
+      (true,null,checkPatternL(x,getGrammarStrings(verb))._2) else (false, new Command("","","","unknown_pattern_"+ verb.split(" ").toList.mkString("_")),null) 
+    def checkPatternL(x:List[String],patterns: List[String]):(Boolean,String) = patterns match {
+      case Nil => (false,null)
+      case y :: ys => var a = matchPattern(x,getWordList(y)); if (a) {(true,y)} else checkPatternL(x,ys)
+    }
+    def matchPattern(cmdWords: List[String], pattern: List[String]): Boolean = cmdWords match {     
+      case Nil | "" :: Nil => if (pattern == Nil){ true} else false
+      case x :: Nil => if (pattern.head.contains("{") && pattern.tail == Nil){ true} else if (cmdWords == pattern) true else false 
+      case y :: ys => if (pattern.head.contains("{") && pattern.tail == Nil) true else if (pattern == Nil) false
+        else if (pattern.head.contains("{") && ys.head != pattern.tail.head) { wordsMatchPatternL(ys, pattern) }      
+        else if (pattern.head.contains("{") && ys.head == pattern.tail.head) { wordsMatchPatternL(ys.tail, pattern.tail.tail)} 
+        else if (y == pattern.head) { wordsMatchPatternL(ys, pattern.tail)  }
+        else false
+     }
+    def formatPattern(x:String, y:String,verb:String): String = if( (((y.replace(verb+ " ", "")).split(" ").toList).filter { p => !p.startsWith("{") }) != Nil) {
+      if(x.split(" ").length==1) null else x.replace(verb+ " ", "").split(" " +(((y.replace(verb+ " ", "")).split(" ").toList).filter { p => !p.startsWith("{") })(0)+ " ").toList.mkString(",")
+      } else x.replace(verb+ " ", "")
+    
+    def checkNoun(x:List[String],nouns: List[String]):(Boolean,Command) = x match {
+      case Nil => (true, null)
+      case y :: ys => var l = (getWordList(y)); if (getNouns().contains(l(l.length-1))) checkNoun(ys,nouns) 
+      else (false, new Command("","","","unknown_noun_"+l(l.length-1).split(" ").toList.mkString("_")))
+    }
+    def checkObj(x:List[String]):(Boolean,Command) = x match {
+      case Nil => (true, null)
+      case z :: zs => var a = z.split(" ").toList;  if(checkObjL(getGameObjects(a.last),z)) checkObj(zs) else (false,new Command("","","","unknown_game_object_"+z.split(" ").toList.mkString("_")))
+    }
+    def checkObjL(x:List[GameObj],y:String):Boolean = x match {
+      case Nil => false
+      case z :: zs => if(checkObjLL(getWordList(z.desc),getWordList(y))) true else checkObjL(zs,y)
+    }
+    def checkObjLL(x:List[String],y:List[String]):Boolean = y match {
+      case Nil => true
+      case z :: zs => if (x != Nil && x.head == z) checkObjLL(x,zs) else if (x == Nil) false  else checkObjLL(x.tail,y)
+    }
+    def checkNounObj(x:List[String], y:List[String],u: String,l:String):(Boolean,Command,List[String]) = y match {
+      case Nil => (true, null,l.split(",").toList)
+      case z :: zs => var a = world.filter(p => (p.kind == x.head || x.head == "object")); var res = checkNounObjL(a,z,0,u,x.head,""); if (res._1) checkNounObj(x.tail,zs,u,(l+res._3+",")) else (false,res._2,null)
+    }
+    def checkNounObjL(x:List[GameObj], y:String,count:Int,u:String,kind:String,r:String):(Boolean,Command,String) = x match {
+      case Nil => if(count == 1) (true, null,r) else {var d = u + "_non_" + kind; (false, new Command("","","",d+"_"+y.split(" ").toList.mkString("_")),null)}
+      case z :: zs =>  var a = getWordList(z.desc); var l = getWordList(y); var c=checkObjLL(a,l); if(count > 1) (false, new Command("","","","ambiguous_object_"+y.split(" ").toList.mkString("_")),null)
+      else if(c && zs == Nil && count == 0){(true, null,a.mkString(" "))}
+      else if(c){ checkNounObjL(x.tail,y,count+1,u,kind,a.mkString(" "))}//(true, null)
+      else checkNounObjL(x.tail,y,count,u,kind,r+"") 
+    }
+    
+}
